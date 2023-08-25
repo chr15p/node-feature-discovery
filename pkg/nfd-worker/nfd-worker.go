@@ -57,6 +57,7 @@ import (
 	_ "sigs.k8s.io/node-feature-discovery/source/network"
 	_ "sigs.k8s.io/node-feature-discovery/source/pci"
 	_ "sigs.k8s.io/node-feature-discovery/source/storage"
+	_ "sigs.k8s.io/node-feature-discovery/source/sysfs"
 	_ "sigs.k8s.io/node-feature-discovery/source/system"
 	_ "sigs.k8s.io/node-feature-discovery/source/usb"
 )
