@@ -90,11 +90,7 @@ func (s *sysfsSource) GetLabels() (source.FeatureLabels, error) {
 	labels := source.FeatureLabels{}
 	features := s.GetFeatures()
 
-	re := regexp.MustCompile(`[^-A-Za-z0-9_.]`)
 	for key, value := range  features.Attributes[sysfsFeature].Elements {
-		//klog.InfoS("GetLabels", "key", key, "value", value)
-		key = re.ReplaceAllString(key, "_")
-		value = re.ReplaceAllString(value, "_")
 		labels[key] = value
 	}
 
@@ -143,20 +139,22 @@ func buildAttributeName(attr string) string {
 }
 
 func readSingleParameter(attrPath string) (string, error){
-	file, err := os.Open(attrPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to open parameter %s: %v", attrPath, err)
-	}
-	defer file.Close()
-
-	byteSlice := make([]byte, 62)
-	bytesRead, err := file.Read(byteSlice)
+	data, err := os.ReadFile(attrPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read parameter %s: %v", attrPath, err)
 	}
-	paramVal := strings.TrimSpace(string(byteSlice[:bytesRead]))
 
-	return paramVal, nil
+	// strip characters that cant make labels, then trucate to 62 chars (max label len)
+	// so we actually get 62 chars (truncateing then stripping can leave a lot less)
+	startWithRe := regexp.MustCompile(`^[^-A-Za-z0-9_.]+`)
+	inStringRe := regexp.MustCompile(`[^-A-Za-z0-9_.]+`)
+
+	value := startWithRe.ReplaceAllString(string(data), "")
+	value = inStringRe.ReplaceAllString(value, "_")
+	if len(value) > 62 {
+		return value[:62], nil
+	}
+	return value, nil
 }
 
 // GetFeatures method of the FeatureSource Interface
