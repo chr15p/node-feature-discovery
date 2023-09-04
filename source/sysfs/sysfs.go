@@ -103,8 +103,10 @@ func (s *sysfsSource) Discover() error {
 	// Get node name
 	s.features.Attributes[sysfsFeature] = nfdv1alpha1.NewAttributeFeatures(nil)
 
-
 	for _, attr := range s.config.SysfsWhitelist {
+		if strings.HasPrefix(attr, "/sys") {
+			attr = attr[4:]
+		}
 		// if provide with a relative path make it absolute
 		if ! filepath.IsAbs(attr) {
 			attr = filepath.Join("/", attr)	
@@ -129,32 +131,68 @@ func (s *sysfsSource) Discover() error {
 }
 
 func buildAttributeName(attr string) string {
+
 	name := strings.Replace(attr, "/", ".", -1)[1:]
 
 	//if its too long strip off the excess chars from the start
-	if(len(name)> 64){
-		name = name[len(name)-64:]
+	if(len(name) > 55){
+		//truncate the key by stripping off direcory names from the start
+		start := len(name)-55
+
+		offset := strings.Index(name[start:], ".") + 1
+
+		//klog.InfoS("truncating key", "key", name, "start", start, "offset", offset, "name", name[start+offset:], "trunc", name[start:])
+		name = name[start+offset:]
 	}
 	return name
 }
 
+func convertToLabel(str string) string {
+
+	if str == "" {
+		return str
+	}
+	// strip characters that cant make labels, then trucate to 62 chars (max label len)
+	startWithRe := regexp.MustCompile(`^[^-A-Za-z0-9]+`)
+	endsWithRe := regexp.MustCompile(`[^-A-Za-z0-9]+$`)
+	inStringRe := regexp.MustCompile(`[^-A-Za-z0-9_.]+`)
+
+	value := startWithRe.ReplaceAllString(str, "")
+	value = inStringRe.ReplaceAllString(value, "_")
+	if len(value) > 62 {
+		value = value[:62]
+	}
+	value = endsWithRe.ReplaceAllString(value, "")
+
+	return value
+}
+
+
 func readSingleParameter(attrPath string) (string, error){
-	data, err := os.ReadFile(attrPath)
+
+	fileInfo, err := os.Stat(attrPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read parameter %s: %v", attrPath, err)
 	}
 
-	// strip characters that cant make labels, then trucate to 62 chars (max label len)
-	// so we actually get 62 chars (truncateing then stripping can leave a lot less)
-	startWithRe := regexp.MustCompile(`^[^-A-Za-z0-9_.]+`)
-	inStringRe := regexp.MustCompile(`[^-A-Za-z0-9_.]+`)
-
-	value := startWithRe.ReplaceAllString(string(data), "")
-	value = inStringRe.ReplaceAllString(value, "_")
-	if len(value) > 62 {
-		return value[:62], nil
+	if fileInfo.IsDir() {
+		// is a directory, so create an empty label
+		return "", nil
 	}
-	return value, nil
+
+	// it exists and its a file
+	data, err := os.ReadFile(attrPath)
+	if err != nil {
+		// if we get "Permission Denied" create an empty label to show it does exist
+		if os.IsPermission(err){
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to read parameter %s: %v", attrPath, err)
+	}
+
+	// its a file and we've read the contents for the label value, so need to sanitize it
+	return convertToLabel(string(data)), nil
+
 }
 
 // GetFeatures method of the FeatureSource Interface
